@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+    <meta charset="UTF-8">
+    <title>Excel Processor</title>
+    <style>
+        .drop-zone { border: 2px dashed #ccc; padding: 20px; margin: 10px; text-align: center; }
+        .drop-zone.highlight { border-color: #007bff; }
+    </style>
+</head>
+<body>
+    <h1>上传 Excel 文件并处理</h1>
+    <form id="uploadForm" enctype="multipart/form-data" method="post" action="/process">
+        <div>
+            <label>数据 Excel 文件（必传）：</label>
+            <div id="dataDropZone" class="drop-zone">拖拽或点击上传数据文件</div>
+            <input type="file" id="data_file" name="data_file" required style="display:none;">
+        </div>
+        <div>
+            <label>模板 Excel 文件（可选）：</label>
+            <div id="templateDropZone" class="drop-zone">拖拽或点击上传模板文件</div>
+            <input type="file" id="template_file" name="template_file" style="display:none;">
+        </div>
+        <div>
+            <label>Sheet Name（默认: 02-项目汇总表）：</label>
+            <input type="text" name="sheet_name" value="02-项目汇总表">
+        </div>
+        <div>
+            <label>Use Columns（逗号分隔，默认: D,E,F,I,K）：</label>
+            <input type="text" name="usecols" value="D,E,F,I,K">
+        </div>
+        <div>
+            <label>Header Row（默认: 1）：</label>
+            <input type="number" name="header_row" value="1">
+        </div>
+        <div>
+            <label>Data Start Row（默认: 4）：</label>
+            <input type="number" name="data_start" value="4">
+        </div>
+        <button type="submit">处理并下载</button>
+    </form>
+
+    <script>
+        function setupDropZone(zoneId, inputId) {
+            const dropZone = document.getElementById(zoneId);
+            const input = document.getElementById(inputId);
+
+            dropZone.addEventListener('click', () => input.click());
+            input.addEventListener('change', () => dropZone.textContent = input.files[0]?.name || '拖拽或点击上传');
+
+            dropZone.addEventListener('dragover', (e) => {
+                e.preventDefault();
+                dropZone.classList.add('highlight');
+            });
+            dropZone.addEventListener('dragleave', () => dropZone.classList.remove('highlight'));
+            dropZone.addEventListener('drop', (e) => {
+                e.preventDefault();
+                dropZone.classList.remove('highlight');
+                input.files = e.dataTransfer.files;
+                dropZone.textContent = input.files[0]?.name || '拖拽或点击上传';
+            });
+        }
+
+        setupDropZone('dataDropZone', 'data_file');
+        setupDropZone('templateDropZone', 'template_file');
+    </script>
+</body>
+</html>

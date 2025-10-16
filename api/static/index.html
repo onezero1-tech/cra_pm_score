@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <title>Excel Processor</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <style>
+    body { font-family: sans-serif; max-width: 720px; margin: 40px auto; padding: 0 16px; }
+    label { display:block; margin-top:12px; }
+    input, select { width:100%; padding:8px; margin-top:4px; box-sizing:border-box; }
+    button { margin-top:16px; padding:10px 16px; }
+    small { color:#666; }
+  </style>
+</head>
+<body>
+  <h1>Excel Processor</h1>
+
+  <form id="procForm">
+    <label>数据文件 (Excel .xlsx)
+      <input type="file" name="data_file" id="data_file" accept=".xlsx,.xls" required />
+    </label>
+
+    <label>模板文件 (Excel .xlsx)
+      <input type="file" name="template_file" id="template_file" accept=".xlsx,.xls" required />
+    </label>
+
+    <label>sheet 名称
+      <input type="text" name="sheet_name" id="sheet_name" value="02-项目汇总表" />
+    </label>
+
+    <label>usecols（逗号分隔，例如 D,E,F,I,K）
+      <input type="text" name="usecols" id="usecols" value="D,E,F,I,K" />
+    </label>
+
+    <label>header_row（表头所在行，1-based）
+      <input type="number" name="header_row" id="header_row" value="1" min="1" />
+    </label>
+
+    <label>data_start（写入起始行，1-based）
+      <input type="number" name="data_start" id="data_start" value="4" min="1" />
+    </label>
+
+    <button type="submit">上传并处理</button>
+  </form>
+
+  <div id="status"></div>
+
+  <script>
+    const form = document.getElementById('procForm');
+    const status = document.getElementById('status');
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      status.textContent = '处理中…';
+
+      const dataFile = document.getElementById('data_file').files[0];
+      const templateFile = document.getElementById('template_file').files[0];
+      if (!dataFile || !templateFile) {
+        status.textContent = '请上传两个文件。';
+        return;
+      }
+
+      const formData = new FormData();
+      formData.append('data_file', dataFile);
+      formData.append('template_file', templateFile);
+      formData.append('sheet_name', document.getElementById('sheet_name').value);
+      formData.append('usecols', document.getElementById('usecols').value);
+      formData.append('header_row', document.getElementById('header_row').value);
+      formData.append('data_start', document.getElementById('data_start').value);
+
+      try {
+        const resp = await fetch('/process', {
+          method: 'POST',
+          body: formData
+        });
+
+        if (!resp.ok) {
+          const txt = await resp.text();
+          status.textContent = '服务器返回错误: ' + resp.status + ' — ' + txt;
+          return;
+        }
+
+        const blob = await resp.blob();
+        const disposition = resp.headers.get('Content-Disposition') || '';
+        let filename = 'processed_excels.zip';
+        const m = /filename=([^;]+)/i.exec(disposition);
+        if (m && m[1]) filename = m[1].replace(/['"]/g, '');
+
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(url);
+
+        status.textContent = '处理完成，文件已下载。';
+      } catch (err) {
+        console.error(err);
+        status.textContent = '请求失败: ' + err.message;
+      }
+    });
+  </script>
+</body>
+</html>

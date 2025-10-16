@@ -92,3 +92,6 @@ async def process_files(
         media_type="application/zip",
         headers={"Content-Disposition": "attachment; filename=processed_excels.zip"}
     )
+
+from mangum import Mangum  # 新增：ASGI 适配器
+handler = Mangum(app)  # Vercel 入口

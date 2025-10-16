@@ -1,14 +1,12 @@
 {
-  "routes": [
-    {
-      "src": "/(.*)",
-      "dest": "app.py"
-    }
-  ],
   "functions": {
-    "app.py": {
-      "memory": 1024,
-      "maxDuration": 60
+    "api/app.py": {
+      "memory": 3000,
+      "maxDuration": 300
     }
-  }
+  },
+  "routes": [
+    { "src": "/process", "dest": "/api/app.py" },
+    { "src": "/(.*)", "dest": "/index.html" }
+  ]
 }

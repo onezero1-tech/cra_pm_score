@@ -4,3 +4,4 @@ pandas
 openpyxl
 python-calamine
 python-multipart
+mangum>=0.17.0

@@ -95,7 +95,7 @@ async def process_files(
 
     # 减少内存：对 groupby 使用 sort=False 并在循环中删除子 DataFrame 引用
     zip_buffer = io.BytesIO()
-    with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zipf:
+    with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_STORED) as zipf:
         # 按最后一个选择的列进行分组（positions 列表最后一个元素）
         group_col = col_names[-1]
         # 使用 groupby with sort=False 可以降低额外开销

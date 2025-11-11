@@ -9,8 +9,23 @@ from fastapi.responses import StreamingResponse
 from openpyxl import load_workbook
 from openpyxl.utils import get_column_letter
 import py7zr
+import logging
+
+logging.basicConfig(level=logging.INFO)
+
 
 app = FastAPI()
+
+# CORS Middleware is still important
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+
 
 def parse_numeric_positions(usecols_str: str) -> List[int]:
     """
@@ -73,18 +88,21 @@ async def process(
     try:
         positions = parse_numeric_positions(usecols)
     except ValueError as e:
-        return {"error": str(e)}
-
+        logging.error(f"Invalid positions: {e}")
+        raise HTTPException(status_code=400, detail=str(e))
+    
     data_content = await data_file.read()
     template_content = await template_file.read()
 
     try:
         df = get_df_by_position_stream(data_content, sheet_name, positions, header=header_row - 1)
     except Exception as e:
-        logging.error(e)
-        return {"error": str(e)}
+        logging.error(f"Error reading Excel data: {e}", exc_info=True)
+        raise HTTPException(status_code=400, detail=f"读取数据文件失败: {e}")
     
     logging.info("df shape is {}".format(df.shape))
+    if df.empty:
+        raise HTTPException(status_code=400, detail="未从指定列和工作表中提取到任何数据。")
 
     # 默认按第一列分组
     group_col = df.columns[-1]
@@ -131,6 +149,7 @@ async def process(
             archive.writestr(out_io.read(), str(safe_name) + '.xlsx')
 
     seven_zip_buffer.seek(0)
+    logging.info("Processing finished. Sending response.")
     return StreamingResponse(
         seven_zip_buffer,
         media_type="application/x-7z-compressed",

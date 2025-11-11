@@ -62,95 +62,75 @@ def read_root():
     return {"message": "Welcome to Excel Processor"}
 
 @app.post("/process")
-async def process_files(
-    data_file: UploadFile,  # 必传：数据 Excel 文件
-    template_file: UploadFile | None = None,  # 可选：模板 Excel 文件
-    sheet_name: str = Form("02-项目汇总表"),  # 可选参数，默认值
-    usecols: str = Form("4,5,6,9,11"),  # 现在默认用数字，逗号分隔，1-based
-    header_row: int = Form(1),  # 可选，1-based header 行（1 表示第一行是列名）
-    data_start: int = Form(4)   # 可选，写入模板的起始行
+async def process(
+    data_file: UploadFile = File(...),
+    template_file: UploadFile = File(...),
+    sheet_name: str = Form("02-项目汇总表"),
+    usecols: str = Form("4,5,6,9,11"),
+    header_row: int = Form(1),
+    data_start: int = Form(4),
 ):
-    if not template_file:
-        return {"error": "模板文件是必需的，请上传。"}
-
-    # 解析数字列到 0-based positions
     try:
         positions = parse_numeric_positions(usecols)
     except ValueError as e:
         return {"error": str(e)}
 
-    # 读取上传文件内容（小优化：先读取模板以便并发使用）
     data_content = await data_file.read()
     template_content = await template_file.read()
 
-    # 读取 DataFrame（按位置）
     try:
-        # pandas header 参数使用 0-based，user 给的是 1-based header_row
         df = get_df_by_position_stream(data_content, sheet_name, positions, header=header_row - 1)
     except Exception as e:
+        logging.error(e)
         return {"error": str(e)}
+    
+    logging.info("df shape is {}".format(df.shape))
 
-    # 为后续在行迭代中按位置访问，获取列名映射（保持 DataFrame 列名但我们通过位置取值）
-    col_names = list(df.columns)  # 列名顺序与 positions 对应
+    # 默认按第一列分组
+    group_col = df.columns[-1]
 
-    # 减少内存：对 groupby 使用 sort=False 并在循环中删除子 DataFrame 引用
     seven_zip_buffer = io.BytesIO()
     with py7zr.SevenZipFile(seven_zip_buffer, mode='w') as archive:
         for k_value, sub_df in df.groupby(group_col, sort=False):
             safe_name = str(k_value).replace('/', '_')
             out_io = io.BytesIO()
-
             tpl_io = io.BytesIO(template_content)
             wb = load_workbook(tpl_io)
+            ws_tpl = wb['A'] if 'A' in wb.sheetnames else wb[wb.sheetnames[0]]
 
-            if 'A' not in wb.sheetnames:
-                ws_tpl = wb[wb.sheetnames[0]]
-            else:
-                ws_tpl = wb['A']
-
-            first_col = col_names[0]
+            first_col = df.columns[0]
             for d_value, mini_df in sub_df.groupby(first_col, sort=False):
                 sheet_name_d = str(d_value)
                 if sheet_name_d in wb.sheetnames:
-                    ws_existing = wb[sheet_name_d]
-                    wb.remove(ws_existing)
+                    wb.remove(wb[sheet_name_d])
                 ws = wb.copy_worksheet(ws_tpl)
                 ws.title = sheet_name_d
 
                 for r_idx, (_, row) in enumerate(mini_df.iterrows(), start=data_start):
-                    try:
-                        v1 = row.iloc[0] if len(col_names) > 0 else None
-                        v2 = row.iloc[1] if len(col_names) > 1 else None
-                        v3 = row.iloc[2] if len(col_names) > 2 else None
-                    except Exception:
-                        v1 = v2 = v3 = None
-
+                    v1 = row.iloc[1] if len(row) > 1 else None
+                    v2 = row.iloc[2] if len(row) > 2 else None
+                    v3 = row.iloc[3] if len(row) > 3 else None
                     if v1 is not None:
-                        e_cell = ws.cell(row=r_idx, column=1, value=v1)
-                        copy_style_no_fill(ws_tpl.cell(row=data_start, column=1), e_cell)
+                        c = ws.cell(row=r_idx, column=1, value=v1)
+                        copy_style_no_fill(ws_tpl.cell(row=data_start, column=1), c)
                     if v2 is not None:
-                        f_cell = ws.cell(row=r_idx, column=2, value=v2)
-                        copy_style_no_fill(ws_tpl.cell(row=data_start, column=2), f_cell)
+                        c = ws.cell(row=r_idx, column=2, value=v2)
+                        copy_style_no_fill(ws_tpl.cell(row=data_start, column=2), c)
                     if v3 is not None:
-                        i_cell = ws.cell(row=r_idx, column=3, value=v3)
-                        copy_style_no_fill(ws_tpl.cell(row=data_start, column=3), i_cell)
+                        c = ws.cell(row=r_idx, column=3, value=v3)
+                        copy_style_no_fill(ws_tpl.cell(row=data_start, column=3), c)
 
             if ws_tpl.title in wb.sheetnames:
                 try:
-                    wb.remove(wb[ws_tpl.title])
+                    wb.remove(ws_tpl)
                 except Exception:
                     pass
-
             wb.save(out_io)
             out_io.seek(0)
-            archive.writestr(f'{safe_name}.xlsx', out_io.read())
-            out_io.close()
-            del wb
-            del tpl_io
+            # Corrected call
+            archive.writestr(out_io.read(), str(safe_name) + '.xlsx')
 
     seven_zip_buffer.seek(0)
-
-
     return StreamingResponse(
         seven_zip_buffer,
         media_type="application/x-7z-compressed",

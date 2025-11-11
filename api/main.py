@@ -8,7 +8,7 @@ from fastapi import FastAPI, UploadFile, Form
 from fastapi.responses import StreamingResponse
 from openpyxl import load_workbook
 from openpyxl.utils import get_column_letter
-import py7zr 
+import py7zr
 
 app = FastAPI()
 

@@ -1,104 +1,67 @@
 <!doctype html>
 <html lang="zh-CN">
 <head>
-  <meta charset="utf-8" />
-  <title>Excel Processor</title>
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <meta charset="UTF-8" />
+  <title>Excel 批量拆分工具</title>
   <style>
-    body { font-family: sans-serif; max-width: 720px; margin: 40px auto; padding: 0 16px; }
-    label { display:block; margin-top:12px; }
-    input, select { width:100%; padding:8px; margin-top:4px; box-sizing:border-box; }
-    button { margin-top:16px; padding:10px 16px; }
-    small { color:#666; }
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; margin: 40px; }
+    h1 { font-size: 24px; margin-bottom: 20px; }
+    label { display: block; margin: 12px 0 4px; font-weight: 600; }
+    input[type=text], input[type=file], input[type=number] { padding: 6px 8px; width: 320px; }
+    button { margin-top: 20px; padding: 8px 20px; font-size: 16px; cursor: pointer; }
+    #msg { margin-top: 20px; color: #e00; }
   </style>
 </head>
 <body>
-  <h1>Excel Processor</h1>
+  <h1>Excel 批量拆分工具</h1>
 
-  <form id="procForm">
-    <label>数据文件 (Excel .xlsx)
-      <input type="file" name="data_file" id="data_file" accept=".xlsx,.xls" required />
-    </label>
+  <form id="uploadForm" enctype="multipart/form-data">
+    <label>数据文件（必填）</label>
+    <input type="file" name="data_file" required />
 
-    <label>模板文件 (Excel .xlsx)
-      <input type="file" name="template_file" id="template_file" accept=".xlsx,.xls" required />
-    </label>
+    <label>模板文件（必填）</label>
+    <input type="file" name="template_file" required />
 
-    <label>sheet 名称
-      <input type="text" name="sheet_name" id="sheet_name" value="02-项目汇总表" />
-    </label>
+    <label>工作表名称</label>
+    <input type="text" name="sheet_name" value="02-项目汇总表" />
 
-    <label>usecols（逗号分隔，例如 4,5,6,9,11）
-      <input type="text" name="usecols" id="usecols" value="4,5,6,9,11" />
-    </label>
+    <label>要提取的列（1 起始，逗号分隔）</label>
+    <input type="text" name="usecols" value="4,5,6,9,11" />
 
-    <label>header_row（表头所在行，1-based）
-      <input type="number" name="header_row" id="header_row" value="1" min="1" />
-    </label>
+    <label>列名所在行（1 起始）</label>
+    <input type="number" name="header_row" value="1" min="1" />
 
-    <label>data_start（写入起始行，1-based）
-      <input type="number" name="data_start" id="data_start" value="4" min="1" />
-    </label>
+    <label>写入起始行（1 起始）</label>
+    <input type="number" name="data_start" value="4" min="1" />
 
-    <button type="submit">上传并处理</button>
+    <button type="submit">生成并下载</button>
   </form>
 
-  <div id="status"></div>
+  <div id="msg"></div>
 
   <script>
-    const form = document.getElementById('procForm');
-    const status = document.getElementById('status');
-
+    const form = document.getElementById('uploadForm');
+    const msg = document.getElementById('msg');
     form.addEventListener('submit', async (e) => {
       e.preventDefault();
-      status.textContent = '处理中…';
-
-      const dataFile = document.getElementById('data_file').files[0];
-      const templateFile = document.getElementById('template_file').files[0];
-      if (!dataFile || !templateFile) {
-        status.textContent = '请上传两个文件。';
-        return;
-      }
-
-      const formData = new FormData();
-      formData.append('data_file', dataFile);
-      formData.append('template_file', templateFile);
-      formData.append('sheet_name', document.getElementById('sheet_name').value);
-      formData.append('usecols', document.getElementById('usecols').value);
-      formData.append('header_row', document.getElementById('header_row').value);
-      formData.append('data_start', document.getElementById('data_start').value);
-
+      msg.textContent = '';
+      const fd = new FormData(form);
       try {
-        const resp = await fetch('/process', {
-          method: 'POST',
-          body: formData
-        });
-
-        if (!resp.ok) {
-          const txt = await resp.text();
-          status.textContent = '服务器返回错误: ' + resp.status + ' — ' + txt;
-          return;
+        const r = await fetch('/process', { method: 'POST', body: fd });
+        if (!r.ok) {
+          const txt = await r.text();
+          throw new Error(txt);
         }
-
-        const blob = await resp.blob();
-        const disposition = resp.headers.get('Content-Disposition') || '';
-        let filename = 'processed_excels.zip';
-        const m = /filename=([^;]+)/i.exec(disposition);
-        if (m && m[1]) filename = m[1].replace(/['"]/g, '');
-
+        // 下载文件
+        const blob = await r.blob();
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        a.download = filename;
-        document.body.appendChild(a);
+        a.download = 'processed_excels.7z';
         a.click();
-        a.remove();
         URL.revokeObjectURL(url);
-
-        status.textContent = '处理完成，文件已下载。';
       } catch (err) {
-        console.error(err);
-        status.textContent = '请求失败: ' + err.message;
+        msg.textContent = '出错：' + err.message;
       }
     });
   </script>

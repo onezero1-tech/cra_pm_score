@@ -1,6 +1,5 @@
 # encoding:utf-8
 import io
-import zipfile
 from copy import copy
 from typing import List
 
@@ -9,6 +8,7 @@ from fastapi import FastAPI, UploadFile, Form
 from fastapi.responses import StreamingResponse
 from openpyxl import load_workbook
 from openpyxl.utils import get_column_letter
+import py7zr 
 
 app = FastAPI()
 
@@ -94,44 +94,30 @@ async def process_files(
     col_names = list(df.columns)  # 列名顺序与 positions 对应
 
     # 减少内存：对 groupby 使用 sort=False 并在循环中删除子 DataFrame 引用
-    zip_buffer = io.BytesIO()
-    with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_STORED) as zipf:
-        # 按最后一个选择的列进行分组（positions 列表最后一个元素）
-        group_col = col_names[-1]
-        # 使用 groupby with sort=False 可以降低额外开销
+    seven_zip_buffer = io.BytesIO()
+    with py7zr.SevenZipFile(seven_zip_buffer, mode='w') as archive:
         for k_value, sub_df in df.groupby(group_col, sort=False):
             safe_name = str(k_value).replace('/', '_')
             out_io = io.BytesIO()
 
-            # 每个文件都从模板重新加载以保证独立性
             tpl_io = io.BytesIO(template_content)
             wb = load_workbook(tpl_io)
-            # 假设模板 sheet 是 'A'，如不同请调整或传入参数
+
             if 'A' not in wb.sheetnames:
-                # 如果模板没有 'A'，选第一个 sheet 作为模板
                 ws_tpl = wb[wb.sheetnames[0]]
             else:
                 ws_tpl = wb['A']
 
-            # 按第一个所选列分组创建多个工作表
             first_col = col_names[0]
             for d_value, mini_df in sub_df.groupby(first_col, sort=False):
                 sheet_name_d = str(d_value)
-                # 如果同名 sheet 存在，先删除（保持工作簿干净）
                 if sheet_name_d in wb.sheetnames:
                     ws_existing = wb[sheet_name_d]
                     wb.remove(ws_existing)
                 ws = wb.copy_worksheet(ws_tpl)
                 ws.title = sheet_name_d
 
-                # 将 mini_df 的每一行按位置写入模板：我们按 positions 列顺序映射到模板的列1,2,3...
-                # 假定模板的目标列从第1列开始依次对应 positions 中的顺序（与原逻辑一致）
                 for r_idx, (_, row) in enumerate(mini_df.iterrows(), start=data_start):
-                    # 使用位置访问：row.iloc[i]
-                    # 列映射： positions[0] -> 模板列1, positions[1] -> 模板列2, positions[2] -> 模板列3
-                    # 如果传入的列数大于模板预期列数，可按需要扩展
-                    # 这里按最多前三列映射到模板列1-3（与原代码保持一致）
-                    # 可根据实际模板列数调整以下逻辑
                     try:
                         v1 = row.iloc[0] if len(col_names) > 0 else None
                         v2 = row.iloc[1] if len(col_names) > 1 else None
@@ -149,29 +135,24 @@ async def process_files(
                         i_cell = ws.cell(row=r_idx, column=3, value=v3)
                         copy_style_no_fill(ws_tpl.cell(row=data_start, column=3), i_cell)
 
-                # 释放 mini_df（帮助垃圾回收）
-                # (Python 会在下一循环迭代覆盖 mini_df 变量)
-            # 删除模板 sheet 避免输出文件中包含模板
             if ws_tpl.title in wb.sheetnames:
                 try:
                     wb.remove(wb[ws_tpl.title])
                 except Exception:
                     pass
 
-            # 保存到 out_io，并写入 zip
             wb.save(out_io)
             out_io.seek(0)
-            zipf.writestr(f'{safe_name}.xlsx', out_io.getvalue())
-
-            # 显式关闭/删除以释放资源
+            archive.writestr(f'{safe_name}.xlsx', out_io.read())
             out_io.close()
             del wb
             del tpl_io
-            # sub_df 和 mini_df 在循环末会被覆盖释放
 
-    zip_buffer.seek(0)
+    seven_zip_buffer.seek(0)
+
+
     return StreamingResponse(
-        zip_buffer,
-        media_type="application/zip",
-        headers={"Content-Disposition": "attachment; filename=processed_excels.zip"}
+        seven_zip_buffer,
+        media_type="application/x-7z-compressed",
+        headers={"Content-Disposition": "attachment; filename=processed_excels.7z"}
     )

@@ -1,18 +1,17 @@
-# encoding:utf-8
+# main.py # encoding:utf-8
 import io
+import logging
 from copy import copy
 from typing import List
 
 import pandas as pd
-from fastapi import FastAPI, UploadFile, Form
+import py7zr
+from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from fastapi.middleware.cors import CORSMiddleware # <--- 修正 1: 导入 CORSMiddleware
 from fastapi.responses import StreamingResponse
 from openpyxl import load_workbook
-from openpyxl.utils import get_column_letter
-import py7zr
-import logging
 
 logging.basicConfig(level=logging.INFO)
-
 
 app = FastAPI()
 
@@ -24,8 +23,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-
 
 def parse_numeric_positions(usecols_str: str) -> List[int]:
     """
@@ -89,8 +86,9 @@ async def process(
         positions = parse_numeric_positions(usecols)
     except ValueError as e:
         logging.error(f"Invalid positions: {e}")
+        # <--- 修正 2: 确保 HTTPException 被导入
         raise HTTPException(status_code=400, detail=str(e))
-    
+
     data_content = await data_file.read()
     template_content = await template_file.read()
 
@@ -99,12 +97,13 @@ async def process(
     except Exception as e:
         logging.error(f"Error reading Excel data: {e}", exc_info=True)
         raise HTTPException(status_code=400, detail=f"读取数据文件失败: {e}")
-    
+
     logging.info("df shape is {}".format(df.shape))
     if df.empty:
         raise HTTPException(status_code=400, detail="未从指定列和工作表中提取到任何数据。")
 
-    # 默认按第一列分组
+    # 按提取的最后一列进行分组 (例如 usecols="4,5,6,9,11" 中的第11列)
+    # <--- 修正 3: 更新注释使其与代码行为一致
     group_col = df.columns[-1]
 
     seven_zip_buffer = io.BytesIO()
@@ -119,6 +118,9 @@ async def process(
             first_col = df.columns[0]
             for d_value, mini_df in sub_df.groupby(first_col, sort=False):
                 sheet_name_d = str(d_value)
+                if len(sheet_name_d) > 31: # Excel sheet name limit
+                    sheet_name_d = sheet_name_d[:31]
+                
                 if sheet_name_d in wb.sheetnames:
                     wb.remove(wb[sheet_name_d])
                 ws = wb.copy_worksheet(ws_tpl)
@@ -145,7 +147,6 @@ async def process(
                     pass
             wb.save(out_io)
             out_io.seek(0)
-            # Corrected call
             archive.writestr(out_io.read(), str(safe_name) + '.xlsx')
 
     seven_zip_buffer.seek(0)

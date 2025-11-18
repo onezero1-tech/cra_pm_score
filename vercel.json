@@ -8,6 +8,7 @@
 { "src": "/", "dest": "/api/static/index.html" },
 { "src": "/static/(.)", "dest": "/api/static/$1" },
 { "src": "/process", "dest": "/api/main.py" },
+{ "src": "/merge", "dest": "/api/main.py" },
 { "src": "/(.)", "dest": "/api/main.py" }
 ]
 }

@@ -67,8 +67,8 @@ async def merge_archive(archive_file: UploadFile = File(...)):
         logging.info("file name is {file_name}")
         base = os.path.splitext(file_name)[0]
         file_key = base.split("-")[4] if len(base.split("-")) > 4 else base
-        logging.info("file name is {file_name}, file key is {file_key}")
-
+        logging.error(f"file name is {file_name}, file key is {file_key}")
+        
         try:
             xl = pd.ExcelFile(io.BytesIO(file_bytes), engine="calamine")
             hs_sheets = [s for s in xl.sheet_names if str(s).startswith("HS")]

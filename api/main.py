@@ -6,7 +6,9 @@ from typing import List
 
 import pandas as pd
 import py7zr
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+import zipfile
+import re
+from fastapi import FastAPI, File, Form, HTTPException,UploadFile
 from fastapi.middleware.cors import CORSMiddleware # <--- 修正 1: 导入 CORSMiddleware
 from fastapi.responses import StreamingResponse
 from openpyxl import load_workbook
@@ -23,6 +25,75 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+# 在文件头部追加
+
+
+# ---------- 新增：zip/7z 解压工具 ----------
+def extract_archive(archive_bytes: bytes, file_name: str) -> dict[str, bytes]:
+    """返回 文件名 → 文件内容 的字典（只保留 xls/xlsx）"""
+    ret: dict[str, bytes] = {}
+    lower_name = file_name.lower()
+    if lower_name.endswith(".zip"):
+        with zipfile.ZipFile(io.BytesIO(archive_bytes)) as z:
+            for info in z.infolist():
+                if info.filename.lower().endswith((".xls", ".xlsx")):
+                    ret[info.filename] = z.read(info)
+    elif lower_name.endswith(".7z"):
+        with py7zr.SevenZipFile(io.BytesIO(archive_bytes), mode="r") as z:
+            for fname, bio in z.readall().items():
+                if fname.lower().endswith((".xls", ".xlsx")):
+                    ret[fname] = bio.read()
+    else:
+        raise ValueError("只支持 .zip / .7z 压缩包")
+    if not ret:
+        raise ValueError("压缩包内未找到 Excel 文件")
+    return ret
+
+# ---------- 新增：/merge 接口 ----------
+@app.post("/merge")
+async def merge_archive(archive_file: UploadFile = File(...)):
+    try:
+        archive_bytes = await archive_file.read()
+        file_map = extract_archive(archive_bytes, archive_file.filename)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"解压失败: {e}")
+
+    all_frames: list[pd.DataFrame] = []
+    for file_name, file_bytes in file_map.items():
+        # 取文件名 key（按“-”分割第 5 段）
+        base = os.path.splitext(file_name)[0]
+        file_key = base.split("-")[4] if len(base.split("-")) > 4 else base
+
+        try:
+            xl = pd.ExcelFile(io.BytesIO(file_bytes), engine="calamine")
+            hs_sheets = [s for s in xl.sheet_names if str(s).startswith("HS")]
+            for sheet in hs_sheets:
+                df = pd.read_excel(xl, sheet_name=sheet, header=None)
+                if df.shape[1] <= 1:
+                    continue
+                df = df.dropna(axis=1, how="all").iloc[3:, 1:]   # 删掉空列，再去掉前 3 行、第 1 列
+                df = df[df.iloc[:, 0].notna()]                   # 第一列非空
+                df.insert(0, "Sheet", sheet)
+                df.insert(0, "File", file_key)
+                all_frames.append(df)
+        except Exception as e:
+            # 单个文件出错继续跑
+            logging.warning("读取 %s 失败: %s", file_name, e)
+
+    if not all_frames:
+        raise HTTPException(status_code=400, detail="未找到任何符合条件的 Sheet")
+
+    final = pd.concat(all_frames, ignore_index=True)
+    out_io = io.BytesIO()
+    final.to_excel(out_io, index=False)
+    out_io.seek(0)
+    return StreamingResponse(
+        out_io,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": "attachment; filename=merged.xlsx"}
+    )
 
 def parse_numeric_positions(usecols_str: str) -> List[int]:
     """

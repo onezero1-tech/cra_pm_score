@@ -64,9 +64,10 @@ async def merge_archive(archive_file: UploadFile = File(...)):
     all_frames: list[pd.DataFrame] = []
     for file_name, file_bytes in file_map.items():
         # 取文件名 key（按“-”分割第 5 段）
-        logging.info("file name is {}", file_name)
+        logging.info("file name is {file_name}")
         base = os.path.splitext(file_name)[0]
         file_key = base.split("-")[4] if len(base.split("-")) > 4 else base
+        logging.info("file name is {file_name}, file key is {file_key}")
 
         try:
             xl = pd.ExcelFile(io.BytesIO(file_bytes), engine="calamine")

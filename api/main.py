@@ -69,6 +69,8 @@ async def merge_archive(archive_file: UploadFile = File(...)):
         if index_pos != -1:
             base = file_name[index_pos + 1:]
         file_key = base.split("-")[4] if len(base.split("-")) > 4 else base
+        if file_key.endswith(".xlsx"):
+            file_key = file_key[:-5]
         logging.error(f"file name is {file_name}, file key is {file_key}")
 
         try:

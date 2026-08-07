@@ -9,6 +9,7 @@ import pandas as pd
 import py7zr
 import zipfile
 import re
+from typing import Dict
 from fastapi import FastAPI, File, Form, HTTPException,UploadFile
 from fastapi.middleware.cors import CORSMiddleware # <--- 修正 1: 导入 CORSMiddleware
 from fastapi.responses import StreamingResponse

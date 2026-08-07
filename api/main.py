@@ -32,25 +32,54 @@ app.add_middleware(
 
 
 # ---------- 新增：zip/7z 解压工具 ----------
-def extract_archive(archive_bytes: bytes, file_name: str) -> dict[str, bytes]:
-    """返回 文件名 → 文件内容 的字典（只保留 xls/xlsx）"""
-    ret: dict[str, bytes] = {}
+def extract_archive(archive_bytes: bytes, file_name: str) -> Dict[str, bytes]:
+    ret: Dict[str, bytes] = {}
     lower_name = file_name.lower()
+
+    def decode_zip_filename(raw: str) -> str:
+        """尝试多种编码解码 ZIP 中的文件名"""
+        # zipfile 内部已将文件名转为 str，但我们可获取原始字节再重解
+        # 注意：raw 是 str，但我们需将其转换为原始字节序列
+        # 通过 .encode('cp437') 获取原始字节（许多 ZIP 工具默认使用 CP437 存储非 UTF-8 名）
+        try:
+            raw_bytes = raw.encode('cp437')
+        except UnicodeEncodeError:
+            # 如果 raw 本身包含无法映射到 cp437 的字符，则保留原样
+            return raw
+
+        # 尝试常见编码
+        for encoding in ['gbk', 'utf-8', 'cp437']:
+            try:
+                decoded = raw_bytes.decode(encoding)
+                # 若解码成功且不含非法字符，则返回
+                return decoded
+            except UnicodeDecodeError:
+                continue
+        # 全部失败则返回原字符串
+        return raw
+
     if lower_name.endswith(".zip"):
         with zipfile.ZipFile(io.BytesIO(archive_bytes)) as z:
             for info in z.infolist():
-                if info.filename.lower().endswith((".xls", ".xlsx")):
-                    ret[info.filename] = z.read(info)
+                decoded_name = decode_zip_filename(info.filename)
+                if decoded_name.lower().endswith((".xls", ".xlsx")):
+                    ret[decoded_name] = z.read(info)
+
     elif lower_name.endswith(".7z"):
         with py7zr.SevenZipFile(io.BytesIO(archive_bytes), mode="r") as z:
             for fname, bio in z.readall().items():
+                # py7zr 默认使用 UTF-8，一般无乱码，但仍可尝试解码
                 if fname.lower().endswith((".xls", ".xlsx")):
                     ret[fname] = bio.read()
     else:
         raise ValueError("只支持 .zip / .7z 压缩包")
+
     if not ret:
         raise ValueError("压缩包内未找到 Excel 文件")
     return ret
+
+
+
 
 # ---------- 新增：/merge 接口 ----------
 @app.post("/merge")

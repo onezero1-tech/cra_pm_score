@@ -14,8 +14,9 @@
       padding: 6px 8px; width: 320px;
     }
     button { margin-top: 20px; padding: 8px 20px; font-size: 16px; cursor: pointer; }
-    #msg { margin-top: 20px; color: #e00; }
+    #msg { margin-top: 20px; color: #e00; white-space: pre-wrap; }
     .modeBox { margin-bottom: 20px; }
+    .hint { color:#666; font-size: 13px; margin: 4px 0 8px; }
   </style>
 </head>
 <body>
@@ -24,7 +25,8 @@
   <!-- 模式切换 -->
   <div class="modeBox">
     <label><input type="radio" name="mode" value="split" checked onchange="toggleMode()"> 拆分模式</label>
-    <label><input type="radio" name="mode" value="merge" onchange="toggleMode()"> 合并模式</label>
+    <label><input type="radio" name="mode" value="merge" onchange="toggleMode()"> 合并模式（简单合并）</label>
+    <label><input type="radio" name="mode" value="cra" onchange="toggleMode()"> CRA 工作量合并模式</label>
   </div>
 
   <!-- 拆分模式表单 -->
@@ -50,11 +52,22 @@
     <button type="submit">生成并下载</button>
   </form>
 
-  <!-- 合并模式表单 -->
+  <!-- 合并模式表单（简单合并） -->
   <form id="mergeForm" enctype="multipart/form-data" style="display:none;">
     <label>上传 zip / 7z 压缩包（内含 Excel）</label>
     <input type="file" name="archive_file" accept=".zip,.7z" required/>
     <button type="submit">下载合并结果</button>
+  </form>
+
+  <!-- CRA 工作量合并模式表单 -->
+  <form id="craForm" enctype="multipart/form-data" style="display:none;">
+    <label>上传 zip / 7z 压缩包（内含 CRA 填写表单等 Excel）</label>
+    <input type="file" name="archive_file" accept=".zip,.7z" required/>
+    <div class="hint">
+      提示：压缩包内如包含文件名带「模板」或「template」的 xlsm/xlsx，
+      将自动作为模板读取《填写指南》和《分数目录》；否则使用第一个数据文件。
+    </div>
+    <button type="submit">下载 CRA 合并结果</button>
   </form>
 
   <div id="msg"></div>
@@ -63,9 +76,10 @@
     const msg = document.getElementById('msg');
 
     function toggleMode() {
-      const isMerge = document.querySelector('input[name="mode"]:checked').value === 'merge';
-      document.getElementById('splitForm').style.display = isMerge ? 'none' : 'block';
-      document.getElementById('mergeForm').style.display = isMerge ? 'block' : 'none';
+      const mode = document.querySelector('input[name="mode"]:checked').value;
+      document.getElementById('splitForm').style.display = (mode === 'split') ? 'block' : 'none';
+      document.getElementById('mergeForm').style.display = (mode === 'merge') ? 'block' : 'none';
+      document.getElementById('craForm').style.display   = (mode === 'cra')   ? 'block' : 'none';
       msg.textContent = '';
     }
 
@@ -83,7 +97,7 @@
       }
     });
 
-    /* ---------- 合并模式 ---------- */
+    /* ---------- 合并模式（简单合并） ---------- */
     document.getElementById('mergeForm').addEventListener('submit', async (e) => {
       e.preventDefault();
       msg.textContent = '';
@@ -92,6 +106,20 @@
         const r = await fetch('/merge', { method: 'POST', body: fd });
         if (!r.ok) throw new Error(await r.text());
         downloadBlob(await r.blob(), 'merged.xlsx');
+      } catch (err) {
+        msg.textContent = '出错：' + err.message;
+      }
+    });
+
+    /* ---------- CRA 工作量合并模式 ---------- */
+    document.getElementById('craForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      msg.textContent = '';
+      const fd = new FormData(e.target);
+      try {
+        const r = await fetch('/merge_cra', { method: 'POST', body: fd });
+        if (!r.ok) throw new Error(await r.text());
+        downloadBlob(await r.blob(), 'merged_cra.xlsx');
       } catch (err) {
         msg.textContent = '出错：' + err.message;
       }

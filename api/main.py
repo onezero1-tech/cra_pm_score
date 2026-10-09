@@ -27,7 +27,9 @@ except Exception:  # pragma: no cover
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
+from fastapi.responses import StreamingResponse, HTMLResponse
+
+
 
 logging.basicConfig(level=logging.INFO)
 
@@ -41,6 +43,141 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# ============================================================
+#                       首页：返回前端页面
+# ============================================================
+
+INDEX_HTML = r"""<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8"/>
+  <title>Excel 批量拆分 / 合并工具</title>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      margin: 40px;
+    }
+    h1 { font-size: 24px; margin-bottom: 12px; }
+    label { display: block; margin: 12px 0 4px; font-weight: 600; }
+    input[type=text], input[type=file], input[type=number] {
+      padding: 6px 8px; width: 320px;
+    }
+    button { margin-top: 20px; padding: 8px 20px; font-size: 16px; cursor: pointer; }
+    #msg { margin-top: 20px; color: #e00; white-space: pre-wrap; }
+    .modeBox { margin-bottom: 20px; }
+    .hint { color:#666; font-size: 13px; margin: 4px 0 8px; }
+  </style>
+</head>
+<body>
+  <h1>Excel 批量拆分 / 合并工具</h1>
+
+  <div class="modeBox">
+    <label><input type="radio" name="mode" value="split" checked onchange="toggleMode()"> 拆分模式</label>
+    <label><input type="radio" name="mode" value="merge" onchange="toggleMode()"> 合并模式（简单合并）</label>
+    <label><input type="radio" name="mode" value="cra" onchange="toggleMode()"> CRA 工作量合并模式</label>
+  </div>
+
+  <form id="splitForm" enctype="multipart/form-data">
+    <label>数据文件（必填）</label>
+    <input type="file" name="data_file" required/>
+
+    <label>模板文件（必填）</label>
+    <input type="file" name="template_file" required/>
+
+    <label>工作表名称</label>
+    <input type="text" name="sheet_name" value="02-项目汇总表"/>
+
+    <label>要提取的列（1 起始，逗号分隔）</label>
+    <input type="text" name="usecols" value="4,5,6,9,11"/>
+
+    <label>列名所在行（1 起始）</label>
+    <input type="number" name="header_row" value="1" min="1"/>
+
+    <label>写入起始行（1 起始）</label>
+    <input type="number" name="data_start" value="4" min="1"/>
+
+    <button type="submit">生成并下载</button>
+  </form>
+
+  <form id="mergeForm" enctype="multipart/form-data" style="display:none;">
+    <label>上传 zip / 7z 压缩包（内含 Excel）</label>
+    <input type="file" name="archive_file" accept=".zip,.7z" required/>
+    <button type="submit">下载合并结果</button>
+  </form>
+
+  <form id="craForm" enctype="multipart/form-data" style="display:none;">
+    <label>上传 zip / 7z 压缩包（内含 CRA 填写表单等 Excel）</label>
+    <input type="file" name="archive_file" accept=".zip,.7z" required/>
+    <div class="hint">
+      提示：压缩包内如包含文件名带「模板」或「template」的 xlsm/xlsx，
+      将自动作为模板读取《填写指南》和《分数目录》；否则使用第一个数据文件。
+    </div>
+    <button type="submit">下载 CRA 合并结果</button>
+  </form>
+
+  <div id="msg"></div>
+
+  <script>
+    const msg = document.getElementById('msg');
+
+    function toggleMode() {
+      const mode = document.querySelector('input[name="mode"]:checked').value;
+      document.getElementById('splitForm').style.display = (mode === 'split') ? 'block' : 'none';
+      document.getElementById('mergeForm').style.display = (mode === 'merge') ? 'block' : 'none';
+      document.getElementById('craForm').style.display   = (mode === 'cra')   ? 'block' : 'none';
+      msg.textContent = '';
+    }
+
+    document.getElementById('splitForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      msg.textContent = '';
+      const fd = new FormData(e.target);
+      try {
+        const r = await fetch('/process', { method: 'POST', body: fd });
+        if (!r.ok) throw new Error(await r.text());
+        downloadBlob(await r.blob(), 'processed_excels.7z');
+      } catch (err) { msg.textContent = '出错：' + err.message; }
+    });
+
+    document.getElementById('mergeForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      msg.textContent = '';
+      const fd = new FormData(e.target);
+      try {
+        const r = await fetch('/merge', { method: 'POST', body: fd });
+        if (!r.ok) throw new Error(await r.text());
+        downloadBlob(await r.blob(), 'merged.xlsx');
+      } catch (err) { msg.textContent = '出错：' + err.message; }
+    });
+
+    document.getElementById('craForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      msg.textContent = '';
+      const fd = new FormData(e.target);
+      try {
+        const r = await fetch('/merge_cra', { method: 'POST', body: fd });
+        if (!r.ok) throw new Error(await r.text());
+        downloadBlob(await r.blob(), 'merged_cra.xlsx');
+      } catch (err) { msg.textContent = '出错：' + err.message; }
+    });
+
+    function downloadBlob(blob, fileName) {
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = fileName;
+      a.click();
+      URL.revokeObjectURL(url);
+    }
+  </script>
+</body>
+</html>
+"""
+
+
+@app.get("/", response_class=HTMLResponse)
+async def index():
+    return INDEX_HTML
 
 # ============================================================
 #                       通用：压缩包解压工具

@@ -5,3 +5,4 @@ openpyxl
 python-calamine
 python-multipart
 py7zr
+xlsxwriter

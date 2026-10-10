@@ -56,6 +56,7 @@ INDEX_HTML = r"""<!doctype html>
     body {
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
       margin: 40px;
+      color: #222;
     }
     h1 { font-size: 24px; margin-bottom: 12px; }
     label { display: block; margin: 12px 0 4px; font-weight: 600; }
@@ -64,20 +65,38 @@ INDEX_HTML = r"""<!doctype html>
     }
     button { margin-top: 20px; padding: 8px 20px; font-size: 16px; cursor: pointer; }
     #msg { margin-top: 20px; color: #e00; white-space: pre-wrap; }
-    .modeBox { margin-bottom: 20px; }
-    .hint { color:#666; font-size: 13px; margin: 4px 0 8px; }
+    .modeBox {
+      margin-bottom: 20px;
+      padding: 12px 16px;
+      border: 1px solid #ddd;
+      border-radius: 6px;
+      background: #fafafa;
+    }
+    .modeBox label { display: block; margin: 6px 0; font-weight: 500; }
+    .hint { color:#666; font-size: 13px; margin: 4px 0 8px; line-height: 1.5; }
+    form { max-width: 720px; }
+    form > button { background: #2c7be5; color: #fff; border: none; border-radius: 4px; }
+    form > button:hover { background: #1a68d1; }
   </style>
 </head>
 <body>
   <h1>Excel 批量拆分 / 合并工具</h1>
 
+  <!-- 模式切换 -->
   <div class="modeBox">
-    <label><input type="radio" name="mode" value="split" checked onchange="toggleMode()"> 拆分模式</label>
-    <label><input type="radio" name="mode" value="merge" onchange="toggleMode()"> 合并模式（简单合并）</label>
-    <label><input type="radio" name="mode" value="cra" onchange="toggleMode()"> CRA 工作量合并模式</label>
+    <label><input type="radio" name="mode" value="split" checked onchange="toggleMode()"> PM质量分拆分模式</label>
+    <label><input type="radio" name="mode" value="merge" onchange="toggleMode()"> PM质量分合并模式</label>
+    <label><input type="radio" name="mode" value="cra" onchange="toggleMode()"> CRA量表合并模式（横表）</label>
+    <label><input type="radio" name="mode" value="cra_vertical" onchange="toggleMode()"> CRA量表合并模式（竖表）</label>
   </div>
 
+  <!-- PM质量分拆分模式 -->
   <form id="splitForm" enctype="multipart/form-data">
+    <div class="hint">
+      按工作表名称提取数据文件指定列，并按最后一列（分组列）拆分成多个 Excel，
+      套用模板样式后打包为 7z 下载。
+    </div>
+
     <label>数据文件（必填）</label>
     <input type="file" name="data_file" required/>
 
@@ -96,23 +115,49 @@ INDEX_HTML = r"""<!doctype html>
     <label>写入起始行（1 起始）</label>
     <input type="number" name="data_start" value="4" min="1"/>
 
-    <button type="submit">生成并下载</button>
+    <button type="submit">生成并下载（.7z）</button>
   </form>
 
+  <!-- PM质量分合并模式 -->
   <form id="mergeForm" enctype="multipart/form-data" style="display:none;">
-    <label>上传 zip / 7z 压缩包（内含 Excel）</label>
+    <div class="hint">
+      上传 zip / 7z 压缩包（内含 Excel），程序会读取每个文件中以「HS」开头的工作表，
+      去掉前 3 行与第 1 列后纵向堆叠，输出为单个 xlsx。
+    </div>
+
+    <label>上传 zip / 7z 压缩包</label>
     <input type="file" name="archive_file" accept=".zip,.7z" required/>
-    <button type="submit">下载合并结果</button>
+
+    <button type="submit">下载合并结果（.xlsx）</button>
   </form>
 
+  <!-- CRA量表合并模式（横表） -->
   <form id="craForm" enctype="multipart/form-data" style="display:none;">
-    <label>上传 zip / 7z 压缩包（内含 CRA 填写表单等 Excel）</label>
-    <input type="file" name="archive_file" accept=".zip,.7z" required/>
     <div class="hint">
-      提示：压缩包内如包含文件名带「模板」或「template」的 xlsm/xlsx，
-      将自动作为模板读取《填写指南》和《分数目录》；否则使用第一个数据文件。
+      读取压缩包内每个 Excel 的「CRA填写表单」工作表，并依据《填写指南》《分数目录》
+      做宽松匹配与分值改写；按工作内容横向展开，输出一张宽表 xlsx。
+      <br>压缩包内如包含文件名带「模板」或「template」的 xlsm/xlsx，将自动作为模板读取
+      《填写指南》和《分数目录》；否则使用第一个数据文件。
     </div>
-    <button type="submit">下载 CRA 合并结果</button>
+
+    <label>上传 zip / 7z 压缩包</label>
+    <input type="file" name="archive_file" accept=".zip,.7z" required/>
+
+    <button type="submit">下载 CRA 横表合并结果（.xlsx）</button>
+  </form>
+
+  <!-- CRA量表合并模式（竖表） -->
+  <form id="craVerticalForm" enctype="multipart/form-data" style="display:none;">
+    <div class="hint">
+      逐个读取压缩包内每个 Excel 的「CRA填写表单」工作表，保留第一行第 2、4、6 列作为固定表头，
+      从第 3 行开始取数，按第 8 列（次数）过滤掉 0 值行；所有文件的有效行纵向堆叠成一张明细表。
+      <br>输出为竖向明细 xlsx（首列为「来源文件」）。
+    </div>
+
+    <label>上传 zip / 7z 压缩包</label>
+    <input type="file" name="archive_file" accept=".zip,.7z" required/>
+
+    <button type="submit">下载 CRA 竖表合并结果（.xlsx）</button>
   </form>
 
   <div id="msg"></div>
@@ -122,12 +167,14 @@ INDEX_HTML = r"""<!doctype html>
 
     function toggleMode() {
       const mode = document.querySelector('input[name="mode"]:checked').value;
-      document.getElementById('splitForm').style.display = (mode === 'split') ? 'block' : 'none';
-      document.getElementById('mergeForm').style.display = (mode === 'merge') ? 'block' : 'none';
-      document.getElementById('craForm').style.display   = (mode === 'cra')   ? 'block' : 'none';
+      document.getElementById('splitForm').style.display       = (mode === 'split')        ? 'block' : 'none';
+      document.getElementById('mergeForm').style.display       = (mode === 'merge')        ? 'block' : 'none';
+      document.getElementById('craForm').style.display         = (mode === 'cra')          ? 'block' : 'none';
+      document.getElementById('craVerticalForm').style.display = (mode === 'cra_vertical') ? 'block' : 'none';
       msg.textContent = '';
     }
 
+    /* ---------- PM质量分拆分模式 ---------- */
     document.getElementById('splitForm').addEventListener('submit', async (e) => {
       e.preventDefault();
       msg.textContent = '';
@@ -139,6 +186,7 @@ INDEX_HTML = r"""<!doctype html>
       } catch (err) { msg.textContent = '出错：' + err.message; }
     });
 
+    /* ---------- PM质量分合并模式 ---------- */
     document.getElementById('mergeForm').addEventListener('submit', async (e) => {
       e.preventDefault();
       msg.textContent = '';
@@ -150,6 +198,7 @@ INDEX_HTML = r"""<!doctype html>
       } catch (err) { msg.textContent = '出错：' + err.message; }
     });
 
+    /* ---------- CRA量表合并模式（横表） ---------- */
     document.getElementById('craForm').addEventListener('submit', async (e) => {
       e.preventDefault();
       msg.textContent = '';
@@ -161,6 +210,19 @@ INDEX_HTML = r"""<!doctype html>
       } catch (err) { msg.textContent = '出错：' + err.message; }
     });
 
+    /* ---------- CRA量表合并模式（竖表） ---------- */
+    document.getElementById('craVerticalForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      msg.textContent = '';
+      const fd = new FormData(e.target);
+      try {
+        const r = await fetch('/merge_cra_vertical', { method: 'POST', body: fd });
+        if (!r.ok) throw new Error(await r.text());
+        downloadBlob(await r.blob(), 'merged_cra_vertical.xlsx');
+      } catch (err) { msg.textContent = '出错：' + err.message; }
+    });
+
+    /* ---------- 公共下载函数 ---------- */
     function downloadBlob(blob, fileName) {
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
@@ -930,6 +992,137 @@ async def merge_cra(archive_file: UploadFile = File(...)):
         headers={"Content-Disposition": "attachment; filename=merged_cra.xlsx"}
     )
 
+
+# ============================================================
+#        新增：CRA 量表合并模式（竖表）
+# ============================================================
+
+SHEET_FORM_CRA = 'CRA填写表单'
+
+
+def _cra_vertical_read_one(path: str, max_cols: int = 300,
+                           filter_col: int = 8,
+                           filter_row_start: int = 3) -> Optional[pd.DataFrame]:
+    """读取单个 CRA 填写表单，返回竖表格式的 DataFrame"""
+    try:
+        df = pd.read_excel(
+            path,
+            sheet_name=SHEET_FORM_CRA,
+            engine='openpyxl',
+            header=None,
+        )
+    except ValueError:
+        logging.info(f'  [跳过] 无 "{SHEET_FORM_CRA}" 工作表: {path}')
+        return None
+    except Exception as e:
+        logging.warning(f'  [错误] 读取失败: {path} -> {e}')
+        return None
+
+    if df.empty or df.shape[0] < filter_row_start:
+        logging.info(f'  [跳过] 数据行不足: {path}')
+        return None
+
+    header_vals = [
+        df.iat[0, i] if df.shape[1] > i else None for i in (1, 3, 5)
+    ]
+
+    data = df.iloc[filter_row_start - 1:, :].reset_index(drop=True)
+
+    if data.shape[1] < filter_col:
+        logging.info(f'  [跳过] 列数不足 {filter_col}: {path}')
+        return None
+
+    col = pd.to_numeric(data.iloc[:, filter_col - 1], errors='coerce').fillna(0)
+    data = data[col != 0].reset_index(drop=True)
+
+    if data.empty:
+        logging.info(f'  [跳过] 过滤后无数据: {path}')
+        return None
+
+    data = data.iloc[:, :max_cols]
+
+    prefix = pd.DataFrame(
+        [header_vals] * len(data),
+        columns=['第1行第2列', '第1行第4列', '第1行第6列'],
+        index=data.index,
+    )
+
+    result = pd.concat([prefix, data], axis=1)
+    result.insert(0, '来源文件', os.path.basename(path))
+    return result
+
+
+def _cra_vertical_merge(files: List[str], output_file: str,
+                        max_cols: int = 300) -> pd.DataFrame:
+    """CRA 量表合并（竖表）：把多个文件的 CRA 填写表单纵向堆叠"""
+    data_files = []
+    for f in files:
+        base = os.path.basename(f)
+        if base.startswith('~$') or base.startswith('.'):
+            continue
+        if not f.lower().endswith(('.xlsm', '.xlsx')):
+            continue
+        data_files.append(f)
+    data_files.sort()
+
+    if not data_files:
+        raise ValueError('未找到待合并的 Excel 数据文件')
+
+    frames = []
+    for idx, path in enumerate(data_files, 1):
+        logging.info(f'[{idx}/{len(data_files)}] 处理: {path}')
+        r = _cra_vertical_read_one(path, max_cols=max_cols)
+        if r is not None:
+            frames.append(r)
+            logging.info(f'    -> 有效行数 {len(r)}')
+
+    if not frames:
+        raise ValueError('没有可合并的数据')
+
+    merged = pd.concat(frames, ignore_index=True, sort=False)
+    merged.to_excel(output_file, index=False)
+    logging.info(f'合并完成，共 {merged.shape[0]} 行 / {merged.shape[1]} 列')
+    return merged
+
+
+@app.post("/merge_cra_vertical")
+async def merge_cra_vertical(archive_file: UploadFile = File(...)):
+    """接收 zip / 7z（内含 CRA 填写表单），返回竖表格式的合并 xlsx"""
+    try:
+        archive_bytes = await archive_file.read()
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"读取上传文件失败: {e}")
+
+    if not archive_bytes:
+        raise HTTPException(status_code=400, detail="上传的文件为空")
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        try:
+            files = extract_archive_to_dir(
+                archive_bytes, archive_file.filename or '', tmpdir)
+        except Exception as e:
+            logging.exception("解压失败")
+            raise HTTPException(status_code=400, detail=f"解压失败: {e}")
+
+        out_path = os.path.join(tmpdir, 'merged_cra_vertical.xlsx')
+
+        try:
+            _cra_vertical_merge(files, out_path)
+        except Exception as e:
+            logging.exception("CRA 竖表合并失败")
+            raise HTTPException(status_code=400, detail=f"合并失败: {e}")
+
+        if not os.path.isfile(out_path):
+            raise HTTPException(status_code=500, detail="未生成合并结果")
+
+        with open(out_path, 'rb') as f:
+            out_bytes = f.read()
+
+    return StreamingResponse(
+        io.BytesIO(out_bytes),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": "attachment; filename=merged_cra_vertical.xlsx"}
+    )
 
 # ============================================================
 #                       原有 /process 接口
